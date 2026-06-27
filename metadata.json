@@ -1,0 +1,6 @@
+{
+  "name": "Schedule List",
+  "description": "Real-time collaborative schedule list and calendar with Firebase auto-save, chat rooms, and Gemini AI recurring event assistant.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
