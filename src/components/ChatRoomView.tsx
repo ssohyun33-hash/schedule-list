@@ -25,7 +25,10 @@ export const ChatRoomView: React.FC<ChatRoomViewProps> = ({ currentUser }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const userEmail = currentUser?.email || 'guest@gmail.com';
+  const userEmail = currentUser?.email || 'visitor@anonymous.io';
+  const userName = currentUser?.displayName || 'Visitor ' + userEmail.substring(8, 12);
+
+  const PUBLIC_ROOM_ID = 'public-lobby';
 
   // Listen to chat rooms
   useEffect(() => {
@@ -34,41 +37,36 @@ export const ChatRoomView: React.FC<ChatRoomViewProps> = ({ currentUser }) => {
       const roomList: ChatRoom[] = [];
       snapshot.forEach((docSnap) => {
         const data = docSnap.data() as ChatRoom;
-        // Check if user is member or creator or guest
+        
+        // Public rooms are visible to everyone (logged in or not)
+        const isPublic = docSnap.id === PUBLIC_ROOM_ID;
+        
+        // Private room checks
         const isMember = data.members?.some(m => m.toLowerCase() === userEmail.toLowerCase()) ||
                          data.createdByEmail?.toLowerCase() === userEmail.toLowerCase() ||
                          currentUser?.isGuest;
-        if (isMember) {
+        
+        if (isPublic || isMember) {
           roomList.push({ ...data, id: docSnap.id });
         }
       });
 
-      // Local storage fallback if offline or no rooms
-      if (roomList.length === 0) {
-        const localRoomsStr = localStorage.getItem('local_chat_rooms');
-        if (localRoomsStr) {
-          try {
-            const parsed = JSON.parse(localRoomsStr);
-            setRooms(parsed);
-            if (!activeRoomId && parsed.length > 0) setActiveRoomId(parsed[0].id);
-            return;
-          } catch {}
-        }
-        // Default seed room
-        const defaultRoom: ChatRoom = {
-          id: 'general-schedule-room',
-          name: '📅 General Schedule Discussion',
-          members: [userEmail, 'ssohyun33@gmail.com'],
+      // Ensure Public Lobby always exists in the list
+      const hasPublic = roomList.some(r => r.id === PUBLIC_ROOM_ID);
+      if (!hasPublic) {
+        const publicRoom: ChatRoom = {
+          id: PUBLIC_ROOM_ID,
+          name: '🌍 Public Community Lobby',
+          members: [], // Empty means open to all in our logic
           createdByEmail: 'system@gmail.com',
-          createdAt: Date.now()
+          createdAt: 0
         };
-        setRooms([defaultRoom]);
-        if (!activeRoomId) setActiveRoomId(defaultRoom.id);
-      } else {
-        setRooms(roomList);
-        localStorage.setItem('local_chat_rooms', JSON.stringify(roomList));
-        if (!activeRoomId && roomList.length > 0) setActiveRoomId(roomList[0].id);
+        roomList.unshift(publicRoom);
       }
+
+      setRooms(roomList);
+      localStorage.setItem('local_chat_rooms', JSON.stringify(roomList));
+      if (!activeRoomId && roomList.length > 0) setActiveRoomId(roomList[0].id);
     }, (err) => {
       console.warn("ChatRooms listener note (using local state):", err.message);
       const localRoomsStr = localStorage.getItem('local_chat_rooms');
@@ -213,7 +211,7 @@ export const ChatRoomView: React.FC<ChatRoomViewProps> = ({ currentUser }) => {
       id: newMsgId,
       roomId: activeRoomId,
       senderEmail: userEmail,
-      senderName: currentUser?.displayName || userEmail.split('@')[0],
+      senderName: userName,
       text: inputText.trim(),
       imageUrl: attachedImageBase64 || undefined,
       createdAt: Date.now()
@@ -276,9 +274,17 @@ export const ChatRoomView: React.FC<ChatRoomViewProps> = ({ currentUser }) => {
                   </div>
                   <div className="min-w-0">
                     <div className="text-xs truncate font-medium">{rm.name}</div>
-                    <div className="text-[10px] text-slate-400 flex items-center gap-1">
-                      <Lock className="w-2.5 h-2.5" />
-                      {rm.members?.length || 1} Gmails whitelisted
+                    <div className="flex items-center gap-1 mt-0.5">
+                      {rm.id === PUBLIC_ROOM_ID ? (
+                        <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1 rounded font-bold uppercase tracking-wide">Public</span>
+                      ) : (
+                        <span className="text-[9px] bg-slate-100 text-slate-500 px-1 rounded font-bold uppercase tracking-wide flex items-center gap-0.5">
+                          <Lock className="w-2 h-2" /> Private
+                        </span>
+                      )}
+                      <div className="text-[10px] text-slate-400 truncate">
+                        {rm.id === PUBLIC_ROOM_ID ? 'Open to all visitors' : `${rm.members?.length || 1} whitelisted`}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -305,8 +311,14 @@ export const ChatRoomView: React.FC<ChatRoomViewProps> = ({ currentUser }) => {
                   {activeRoom.name}
                 </h4>
                 <div className="text-xs text-slate-400 mt-0.5 truncate flex items-center gap-1.5">
-                  <span>Whitelisted Gmails:</span>
-                  <span className="text-indigo-200 font-mono text-[11px]">{activeRoom.members?.join(', ')}</span>
+                  {activeRoom.id === PUBLIC_ROOM_ID ? (
+                    <span>This room is public. Everyone (including visitors) can participate!</span>
+                  ) : (
+                    <>
+                      <span>Whitelisted Gmails:</span>
+                      <span className="text-indigo-200 font-mono text-[11px]">{activeRoom.members?.join(', ')}</span>
+                    </>
+                  )}
                 </div>
               </div>
 

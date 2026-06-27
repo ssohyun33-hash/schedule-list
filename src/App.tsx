@@ -186,6 +186,22 @@ export default function App() {
     } catch {}
   };
 
+  const handleCreateRoom = async (name: string, members: string[]) => {
+    const newId = 'room_' + Math.random().toString(36).substring(2, 11);
+    const newRoom = {
+      id: newId,
+      name,
+      members,
+      createdByEmail: currentUser?.email || 'ai.assistant@gmail.com',
+      createdAt: Date.now()
+    };
+    try {
+      await setDoc(doc(db, 'chatRooms', newId), newRoom);
+    } catch (err) {
+      console.warn("Room creation error:", err);
+    }
+  };
+
   const handleDeleteEvent = async (eventId: string) => {
     const updated = events.filter(e => e.id !== eventId);
     setEvents(updated);
@@ -225,6 +241,10 @@ export default function App() {
         {activeTab === 'ai' && (
           <AiAssistant
             onAddEventsBatch={handleAddEventsBatch}
+            onDeleteEvent={handleDeleteEvent}
+            onToggleComplete={handleToggleComplete}
+            onCreateRoom={handleCreateRoom}
+            events={events}
             currentUser={currentUser}
           />
         )}

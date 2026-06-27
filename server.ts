@@ -33,64 +33,89 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
-// Gemini AI Recurring & Smart Event Generator Endpoint
-app.post('/api/gemini/recurring', async (req, res) => {
+// Gemini AI Action Controller (Handles events, rooms, and modifications)
+app.post('/api/gemini/action', async (req, res) => {
   try {
-    const { prompt, currentDate } = req.body;
+    const { prompt, currentDate, context } = req.body;
     if (!prompt) {
       return res.status(400).json({ error: "Prompt is required." });
     }
 
     const ai = getAiClient();
-    const systemInstruction = `You are an intelligent schedule and calendar planning assistant.
-The user wants to generate schedule items from a natural language request, especially recurring rules like "every Friday: team lunch at 12:30" or "every 3rd of week: gym session at 17:00".
-Current reference date: ${currentDate || new Date().toISOString().split('T')[0]}.
+    const systemInstruction = `You are an intelligent full-app orchestrator for a Schedule & Chat application.
+Reference Date: ${currentDate || new Date().toISOString().split('T')[0]}.
 
-Analyze the user's prompt. If it describes a recurring event (e.g. every Friday, every Monday, every 3rd day of the week), calculate the exact calendar dates for the next 8 to 12 occurrences starting from or after the reference date. If it describes a single event or a list of specific events, generate those dates.
+You can perform the following actions:
+1. CREATE_EVENTS: For specific or recurring events (e.g., "every Friday...").
+2. CREATE_ROOM: Create a chat room and invite people by email.
+3. DELETE_EVENTS: Identify events to remove based on title or date.
+4. TOGGLE_EVENTS: Mark events as completed/done.
 
-Return a JSON array of event objects.`;
+Current Context (Visible events/rooms):
+${JSON.stringify(context || {})}
+
+Analyze the user's natural language request. Return a JSON object with an 'actions' array.
+Each action must have a 'type' (CREATE_EVENTS, CREATE_ROOM, DELETE_EVENTS, TOGGLE_EVENTS) and a 'payload'.`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.5-flash',
+      model: 'gemini-2.0-flash',
       contents: prompt,
       config: {
         systemInstruction,
-        temperature: 0.3,
+        temperature: 0.2,
         responseMimeType: 'application/json',
         responseSchema: {
-          type: Type.ARRAY,
-          description: "List of calculated calendar schedule events",
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              title: { type: Type.STRING, description: "Short title of the event" },
-              description: { type: Type.STRING, description: "Details or notes" },
-              date: { type: Type.STRING, description: "Date in YYYY-MM-DD format" },
-              time: { type: Type.STRING, description: "Time in 24h HH:mm format (e.g. 09:00 or 14:30)" },
-              category: { 
-                type: Type.STRING, 
-                description: "Must be one of: work, personal, urgent, meeting"
-              },
-              recurrenceRule: { type: Type.STRING, description: "Summary of the rule, e.g. 'every Friday'" }
-            },
-            required: ["title", "date", "time", "category"]
+          type: Type.OBJECT,
+          properties: {
+            summary: { type: Type.STRING, description: "Brief explanation of what the AI is doing" },
+            actions: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  type: { type: Type.STRING, enum: ["CREATE_EVENTS", "CREATE_ROOM", "DELETE_EVENTS", "TOGGLE_EVENTS"] },
+                  payload: {
+                    type: Type.OBJECT,
+                    properties: {
+                      // For CREATE_EVENTS
+                      events: {
+                        type: Type.ARRAY,
+                        items: {
+                          type: Type.OBJECT,
+                          properties: {
+                            title: { type: Type.STRING },
+                            date: { type: Type.STRING },
+                            time: { type: Type.STRING },
+                            category: { type: Type.STRING },
+                            recurrenceRule: { type: Type.STRING }
+                          }
+                        }
+                      },
+                      // For CREATE_ROOM
+                      roomName: { type: Type.STRING },
+                      invites: { type: Type.ARRAY, items: { type: Type.STRING } },
+                      // For DELETE/TOGGLE
+                      targetIds: { type: Type.ARRAY, items: { type: Type.STRING } },
+                      targetTitleMatch: { type: Type.STRING },
+                      completed: { type: Type.BOOLEAN }
+                    }
+                  }
+                },
+                required: ["type", "payload"]
+              }
+            }
           }
         }
       }
     });
 
     const text = response.text;
-    if (!text) {
-      return res.status(500).json({ error: "Gemini returned empty response." });
-    }
+    if (!text) throw new Error("Empty AI response");
 
-    const generatedEvents = JSON.parse(text);
-    return res.json({ events: generatedEvents });
+    return res.json(JSON.parse(text));
   } catch (error: any) {
-    console.error("Error in /api/gemini/recurring:", error);
-    return res.status(500).json({ 
-      error: error.message || "Failed to generate schedule with Gemini." 
-    });
+    console.error("Gemini Action Error:", error);
+    return res.status(500).json({ error: error.message });
   }
 });
 
